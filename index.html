@@ -336,7 +336,7 @@ async function loadData(){
   try{
     const res=await fetch(SHEET_URL);
     const rows=await res.json();
-    data=rows.map(r=>({id:Number(r.id),type:r.type,desc:r.desc,amount:Number(r.amount),date:r.date,kategori:r.kategori,rekening:r.rekening||'cash'})).filter(r=>r.id&&r.type);
+    data=rows.map(r=>({id:Number(r.id),type:r.type,desc:r.desc,amount:Number(r.amount),date:normalizeDate(r.date),kategori:r.kategori,rekening:r.rekening||'cash'})).filter(r=>r.id&&r.type);
     data.sort((a,b)=>b.id-a.id);
   }catch(e){showToast('Gagal memuat data. Cek koneksi.','error');data=[];}
   hideLoading();renderDashboard();
@@ -344,12 +344,27 @@ async function loadData(){
 async function saveToSheet(t){await fetch(SHEET_URL,{method:'POST',body:JSON.stringify({action:'add',data:t})});}
 async function deleteFromSheet(id){await fetch(SHEET_URL,{method:'POST',body:JSON.stringify({action:'delete',id:id})});}
 
+function normalizeDate(raw){
+  if(!raw) return '';
+  const s=String(raw).trim();
+  // Sudah YYYY-MM-DD
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // Format M/D/YYYY atau MM/DD/YYYY dari Google Sheets
+  const slash=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if(slash) return `${slash[3]}-${slash[1].padStart(2,'0')}-${slash[2].padStart(2,'0')}`;
+  // Fallback: parse sebagai Date
+  const d=new Date(raw);
+  if(!isNaN(d.getTime())) return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  return s;
+}
 function getToday(){return new Date().toISOString().split('T')[0];}
 function filterByPeriod(arr,period){
   const now=new Date();
+  const todayStr=getToday();
   return arr.filter(t=>{
-    const d=new Date(t.date+'T00:00:00');
-    if(period==='hari') return t.date===getToday();
+    const dateStr=normalizeDate(t.date);
+    if(period==='hari') return dateStr===todayStr;
+    const d=new Date(dateStr+'T00:00:00');
     if(period==='minggu'){const day=now.getDay()||7,mon=new Date(now);mon.setDate(now.getDate()-day+1);mon.setHours(0,0,0,0);return d>=mon;}
     if(period==='bulan') return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();
     return true;
@@ -357,7 +372,13 @@ function filterByPeriod(arr,period){
 }
 function fRp(n){if(n>=1000000)return 'Rp '+(n/1000000).toFixed(1).replace('.0','')+'jt';if(n>=1000)return 'Rp '+(n/1000).toFixed(0)+'rb';return 'Rp '+n.toLocaleString('id-ID');}
 function fRpFull(n){return 'Rp '+Number(n).toLocaleString('id-ID');}
-function fDate(s){return new Date(s+'T00:00:00').toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'});}
+function fDate(s){
+  const clean=normalizeDate(s);
+  if(!clean) return '-';
+  const d=new Date(clean+'T00:00:00');
+  if(isNaN(d.getTime())) return clean;
+  return d.toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'});
+}
 
 function updateHeaderDate(){const now=new Date();document.getElementById('headerDate').innerHTML=now.toLocaleDateString('id-ID',{weekday:'short',day:'numeric',month:'short'})+'<br>'+now.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});}
 updateHeaderDate();setInterval(updateHeaderDate,60000);
